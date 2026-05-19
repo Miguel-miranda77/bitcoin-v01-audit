@@ -1,0 +1,73 @@
+====================================
+BITCOINTALK POST - READY TO PUBLISH
+====================================
+
+Title: [DISCOVERY] Bitcoin v0.1.0 had a complete P2P marketplace protocol — and nobody noticed for 17 years
+
+---
+
+I've been doing a systematic source code audit of Bitcoin v0.1.0 (the original January 9, 2009 release, mirrored at github.com/0xMagnuz/Bitcoin-v0.1) and I found something that appears to have been completely overlooked by the Bitcoin development community.
+
+**The finding:** Satoshi's original code contains a fully functional P2P marketplace protocol with 4 dedicated network commands — and virtually every modern protocol documentation omits them.
+
+## What's actually in the code
+
+If you grep for `if (strCommand ==` in src/main.cpp's ProcessMessage() function, you get **12 command handlers**, not the 7-8 that most documentation lists:
+
+**Core Protocol (8 commands):**
+1. version (line 1705) — handshake
+2. addr (line 1748) — peer address propagation
+3. inv (line 1772) — inventory announcement
+4. getdata (line 1795) — request inventory objects
+5. getblocks (line 1832) — request block inventory
+6. tx (line 1868) — transaction processing
+7. block (line 1939) — block processing
+8. getaddr (line 1955) — request peer addresses
+
+**Marketplace Protocol (4 commands) — THE MISSING ONES:**
+9. review (line 1921) — product review processing and relay
+10. checkorder (line 1974) — verify payment order, generate escrow pubkey
+11. submitorder (line 1993) — accept payment, add to wallet, confirm
+12. reply (line 2015) — asynchronous request-response callback
+
+Plus a **publish/subscribe channel system** in src/net.h and src/net.cpp with 4 additional commands: subscribe, sub-cancel, publish, pub-cancel.
+
+**Total: 16 P2P commands (15 unique).**
+
+## What's NOT in v0.1.0
+
+Just as important — several commands commonly attributed to v0.1.0 don't exist in the source code:
+
+- **verack** — 0 matches. Added in v0.2.0 (late 2009)
+- **ping** — Only exists as IRC PING in src_irc.cpp:110. Added as Bitcoin P2P command in v0.6.0 (2012)
+- **alert** — 0 matches. Added in v0.3.11 (2010)
+
+## Why this matters
+
+The marketplace commands are not local UI functions or encapsulated transaction logic. They are **full P2P network command handlers at the same architectural level as version, tx, and block**. They parse data from the network stream, execute business logic, and respond via PushMessage().
+
+The checkorder/submitorder/reply system implements a complete request-response payment flow:
+- checkorder: seller verifies order and returns a public key
+- submitorder: buyer submits payment, seller accepts and confirms
+- reply: asynchronous callback via mapRequests
+
+Combined with OP_CHECKMULTISIG (which exists as an opcode in script.h) and the pub/sub channel system, these components constitute the architectural building blocks of a primitive state channel — predating the Lightning Network whitepaper by approximately six years.
+
+**Important caveat:** Satoshi did not design a state channel. The components exist in the code but were never connected for that purpose. The state channel interpretation is a discovery made through reverse engineering of the architectural possibilities latent in the original code, not a claim about Satoshi's intent.
+
+## Verification
+
+Every claim above is verifiable in minutes:
+
+1. Clone github.com/0xMagnuz/Bitcoin-v0.1
+2. `grep 'if (strCommand ==' src/main.cpp` — you'll find 12 handlers
+3. `grep 'PushMessage("' src/net.h src/net.cpp` — you'll find the pub/sub commands
+4. `grep -r 'verack' src/` — zero results
+5. `grep -r '"ping"' src/` — zero results (only IRC PING)
+
+Full audit PDF with line numbers, tables, and verification methodology:
+[link to PDF]
+
+I'm continuing to investigate the deeper implications of this marketplace architecture and its connection to the poker interface skeleton that also exists in v0.1.0. If this research is valuable:
+
+BTC: 15rTeVw2P8NqUtFXGJk7Fj5RraMK9JZGpF

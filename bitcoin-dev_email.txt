@@ -1,0 +1,49 @@
+====================================
+BITCOIN-DEV MAILING LIST EMAIL
+====================================
+
+Subject: Bitcoin v0.1.0 P2P protocol audit — marketplace commands absent from modern documentation
+
+---
+
+I've completed a source-code-level audit of Bitcoin v0.1.0's P2P protocol commands and found significant discrepancies between what the code contains and what the current protocol documentation describes. I'm sharing this here for correction and discussion.
+
+## Summary of Findings
+
+The ProcessMessage() function in src/main.cpp contains **12 command handlers**, not the 7-8 typically documented. Four marketplace-related commands have been systematically omitted from virtually all modern protocol specifications:
+
+| Command | Line | Function |
+|---------|------|----------|
+| review | 1921 | Product review processing and relay |
+| checkorder | 1974 | Verify payment order, return escrow pubkey |
+| submitorder | 1993 | Accept payment, add to wallet, confirm |
+| reply | 2015 | Async request-response callback via mapRequests |
+
+Additionally, the publish/subscribe system in net.h/net.cpp sends 4 more commands (subscribe, sub-cancel, publish, pub-cancel) that are also absent from modern documentation.
+
+## Commands Incorrectly Attributed to v0.1.0
+
+- verack: Zero occurrences in v0.1.0 source. The version handshake was implicit (if no version message, disconnect). Added in v0.2.0.
+- ping: Only exists as IRC protocol PING in src_irc.cpp:110. Not a Bitcoin P2P command. Added in v0.6.0.
+- alert: Zero occurrences. Added in v0.3.11.
+
+## Architectural Note
+
+The marketplace commands (checkorder/submitorder/reply) are full P2P network handlers, not local UI functions as some secondary sources claim. They operate at the same architectural level as the core consensus commands — parsing from vRecv, executing business logic, responding via PushMessage. The checkorder handler implements escrow key delivery, submitorder implements the complete payment lifecycle (verify, accept, store, relay, confirm), and reply provides a generic async callback mechanism.
+
+This infrastructure, combined with OP_CHECKMULTISIG (opcode definition in script.h) and the pub/sub channel system, provides the architectural components for a primitive state channel. I want to be explicit: I am NOT claiming Satoshi designed a state channel. I am noting that the components exist in the code and could theoretically be connected. The connection itself would require additional code.
+
+## Reproducibility
+
+All findings are reproducible by grepping the 0xMagnuz/Bitcoin-v0.1 repository:
+- grep 'if (strCommand ==' src/main.cpp → 12 handlers
+- grep 'PushMessage("' src/net.h src/net.cpp → pub/sub + marketplace responses
+- grep -r 'verack' src/ → 0 results
+- grep -r '"ping"' src/ → 0 results
+
+Full audit document available at: [link]
+
+I'd appreciate corrections if anyone has contradictory evidence from the original source tarball or an earlier mirror.
+
+If this research is valuable:
+BTC: 15rTeVw2P8NqUtFXGJk7Fj5RraMK9JZGpF
